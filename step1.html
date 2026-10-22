@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>LittleJS Ski - Step 1</title>
+<script src="https://cdn.jsdelivr.net/npm/littlejsengine@1.17.11/dist/littlejs.min.js"></script>
+</head>
+<body>
+
+<script>
+// Step1
+'use strict';
+
+// create a simple a object that defines
+// some basic settings for our game
+const G = {
+  // Logical grid size (in tiles)
+  width: 20, height: 30,
+  // Size of one tile in screen pixels
+  tileSize: 16,
+  tiles: ['public/ski_tiles.png'],
+}
+
+// called once, when the game is initialized
+// set up screen size and camera.
+function gameInit() {
+  // Compute the fixed canvas size in screen pixels
+  // (logical tiles × tile size)
+  const gameSize = vec2(
+    G.width * G.tileSize,
+    G.height * G.tileSize
+  );
+
+  // Lock the canvas to an exact pixel size
+  // This prevents browser scaling and keeps pixels crisp
+  setCanvasFixedSize(gameSize);
+
+  // Cache the logical grid size as a vector (tiles, not pixels)
+  G.size = vec2(G.width, G.height);
+
+  // World-space center point (origin-based)
+  // Useful for camera positioning, spawning, etc.
+  G.center = vec2(0);
+
+  // Set camera scale so that:
+  // 1 world unit == 1 tile
+  // (i.e. a 1×1 object renders as 16×16 pixels)
+  cameraScale = G.tileSize;
+}
+
+
+// the following four functions will be called
+// each game loop
+function gameUpdate() {
+  // check for stuff like game over condition etc.
+}
+
+function gameRender() {
+  // clear the screen with a white rectangle
+  drawRect(vec2(0), vec2(G.width, G.height), new Color().setHex('#ffffff'));
+  // draw an image to the screen
+  drawTile(
+    vec2(0), // center of screen
+    vec2(2),// size
+    tile(71, G.tileSize)) // frame and tileSize
+}
+
+// called after gameUpdate
+function gameUpdatePost() { }
+// called after gameRender. Useful for adding UI
+function gameRenderPost() { }
+
+// fire up LittleJS with all the necessary functions and tiles(s)
+engineInit(
+  gameInit,
+  gameUpdate, gameUpdatePost,
+  gameRender, gameRenderPost,
+  G.tiles
+);
+</script>
+
+</body>
+</html>

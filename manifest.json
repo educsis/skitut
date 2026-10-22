@@ -1,0 +1,32 @@
+{
+  "name": "LittleJS Ski",
+  "version": "1.6.0",
+  "manifest_version": 3,
+  "short_name": "LittleSki",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#cfe7f7",
+  "theme_color": "#005784",
+  "icons": [
+    {
+      "src": "public/icons/icon-16.png",
+      "sizes": "16x16",
+      "type": "image/png"
+    },
+    {
+      "src": "public/icons/icon-180.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    },
+    {
+      "src": "public/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "public/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

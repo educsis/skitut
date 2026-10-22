@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>LittleJS Ski - Step 2</title>
+<script src="https://cdn.jsdelivr.net/npm/littlejsengine@1.17.11/dist/littlejs.js"></script>
+
+</head>
+<body>
+
+<script>
+'use strict';
+
+// create a simple a object that defines
+// some basic settings for our game
+const G = {
+  // Logical grid size (in tiles)
+  width: 20, height: 30,
+  // Size of one tile in screen pixels
+  tileSize: 16,
+  tiles: ['public/ski_tiles.png'],
+}
+
+// called once, when the game is initialized
+// set up screen size and camera.
+function gameInit() {
+  // Compute the fixed canvas size in screen pixels
+  // (logical tiles × tile size)
+  const gameSize = vec2(
+    G.width * G.tileSize,
+    G.height * G.tileSize
+  );
+
+  // Lock the canvas to an exact pixel size
+  // This prevents browser scaling and keeps pixels crisp
+  setCanvasFixedSize(gameSize);
+
+  // Cache the logical grid size as a vector (tiles, not pixels)
+  G.size = vec2(G.width, G.height);
+
+  // World-space center point (origin-based)
+  // Useful for camera positioning, spawning, etc.
+  G.center = vec2(0);
+
+  // Set camera scale so that:
+  // 1 world unit == 1 tile
+  // (i.e. a 1×1 object renders as 16×16 pixels)
+  cameraScale = G.tileSize;
+
+  // create our player
+  G.player = new Player(G);
+
+}
+
+
+// the following four functions will be called
+// each game loop
+function gameUpdate() {
+  // check for stuff like game over condition etc.
+}
+
+function gameRender() {
+  // clear the screen with a white rectangle
+  drawRect(cameraPos, G.size, WHITE);
+}
+
+// called after gameUpdate
+function gameUpdatePost() { }
+// called after gameRender. Useful for adding UI
+function gameRenderPost() { }
+
+// fire up LittleJS with all the necessary functions and tiles(s)
+engineInit(
+  gameInit,
+  gameUpdate, gameUpdatePost,
+  gameRender, gameRenderPost,
+  G.tiles
+);
+
+
+class Player extends EngineObject {
+  constructor(game) {
+    let size = 1.5, frame = 71;
+    super(
+      cameraPos,
+      vec2(size),
+      tile(frame, game.tileSize)
+    );
+
+    // edge of screen, left
+    this.minX = (game.width-2) / -2;
+    // edge of screen, right
+    this.maxX = (game.width-2) / 2;
+
+    // horizontal direction of player
+    this.dir = 0;
+
+  }
+
+  update() {
+    super.update();
+    if (mouseWasPressed(0) || keyWasPressed('Space')) {
+      this.velocity.x = (this.velocity.x === 0)
+        ? .1
+        : this.velocity.x * -.25;
+    }
+
+    // // gradually increase x speed
+    if (this.velocity.x !== 0) {
+      this.velocity.x *= 1.05;
+    }
+    // // clamp x speed
+    this.velocity.x = clamp(this.velocity.x, -.35, .35);
+
+    this.angle = -this.velocity.x;
+
+    // change direction if player about to go off screen
+    if (this.pos.x <= this.minX
+        || this.pos.x >= this.maxX) {
+      this.velocity.x *= -1;
+    }
+  }
+}
+</script>
+
+</body>
+</html>
