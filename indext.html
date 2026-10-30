@@ -1,0 +1,1193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>LittleJS Ski</title>
+
+<link rel="manifest" href="manifest.json">
+
+<link rel="icon" type="image/x-icon" href="favicon.ico">
+<meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes" />
+
+<script src="public/js/littlejs.js"></script>
+<!-- Play pico-8 tunes in js: https://github.com/codyebberson/pico8-music -->
+<script src="public/js/p8-music.js"></script>
+<!-- Awesome collection of CC tunes: https://www.lexaloffle.com/bbs/?tid=29008-->
+<script src="public/js/tunes.js"></script>
+
+<script defer src="https://cloud.umami.is/script.js" data-website-id="6a7a59ee-cea7-4517-8aac-1aa3347fb5da"></script>
+
+<style>
+html ,body { background: #333; }
+
+#loading-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: lightblue;
+  color: #036;
+  font-family: monospace;
+  font-weight: bold;
+  z-index: 1000;
+}
+
+.spinner {
+  width: 32px;
+  height: 32px;
+  border: 7px solid #fff3;
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+#pause-ui {
+  position: fixed;
+  inset: 0;
+  z-index: 10001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+
+#pause-ui:not([hidden]) {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+#pause-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+#pause-panel {
+  position: relative;
+  font: 140% monospace;
+  border: 5px solid #036;
+  width: min(90vw, 320px);
+  background: center url('public/icy.svg') lightblue;
+  padding: 1em;
+  color: #036;
+  box-shadow: 7px 7px 0px rgba(0,0,0,.25);
+  border-radius: 3px;
+  transform: translateY(50px) scale(0.95);
+  transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+#pause-ui[hidden] #pause-panel { top: -100%; }
+#pause-ui:not([hidden]) #pause-panel {
+  transform: translateY(0) scale(1);
+}
+
+#pause-panel h1 {
+  font-size: 1.6em;
+  margin: 0 0 1rem 0;
+}
+#pause-panel label {
+  display: block; width: 100%;
+  padding: .5rem 0;
+  border-radius: 5px;
+}
+#pause-panel label.clear-scores { padding-left: 2rem; width: 90%; }
+#pause-panel label:hover {
+  text-shadow: none;
+  cursor: pointer;
+  background: yellow;
+  color: black;
+}
+#pause-panel label input { margin-right: 1rem; }
+#pause-panel #install-button {
+  position: relative;
+  font: bold 1.2rem monospace;
+  margin: 1rem 0 1rem 2rem;
+  text-indent:0;
+  width: 90%;
+  background: orange;
+  color: black;
+}
+#pause-panel #install-button:hover {
+  cursor: pointer;
+  background: green;
+  color: white;
+}
+#pause-panel button {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  text-indent: -99999rem;
+  background: #efefef;
+  border: 2px solid black;
+  border-radius: 5px;
+  width: 32px; height: 32px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40px' height='40px' viewbox='0 0 40 40'%3E%3Cpath d='M 10,10 L 30,30 M 30,10 L 10,30' stroke='black' stroke-width='4' stroke-linecap='butt' /%3E%3C/svg%3E");
+  background-size: 100%;
+}
+#pause-panel button:hover {
+  cursor: pointer;
+  background-color: orange;
+  color: #fff;
+}
+
+.blink { animation: blinker 1s linear infinite;}
+@keyframes blinker { 50% { opacity: 0; } }
+
+</style>
+</head>
+<body>
+
+<script type="module">
+'use strict';
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js');
+}
+
+// naughty, naughty
+Array.prototype.rnd = function () {
+  return this[Math.floor((Math.random()*this.length))];
+}
+
+const PATTERNS = [{
+    name: 'Slalom',
+    difficulty: 1,
+    objects: [
+      { type: 'Tree', pos: vec2(-5, 0) },
+      { type: 'Treat', pos: vec2(0, -2) },
+      { type: 'Tree', pos: vec2(5, -5) },
+      { type: 'Treat', pos: vec2(0, -7) },
+      { type: 'Tree', pos: vec2(-5, -10) }
+    ]
+  },
+  {
+    name: 'The Funnel A',
+    difficulty: 2,
+    objects: [
+      { type: 'Tree', pos: vec2(-8, 0) }, { type: 'Tree', pos: vec2(8, 0) },
+      { type: 'Tree', pos: vec2(-4, -4) }, { type: 'Tree', pos: vec2(4, -4) },
+      { type: 'Treat', pos: vec2(0, -6) },
+      { type: 'Tree', pos: vec2(2, -8) },
+    ]
+  },
+  {
+    name: 'The Funnel B',
+    difficulty: 2,
+    objects: [
+      { type: 'Tree', pos: vec2(-8, 0) }, { type: 'Tree', pos: vec2(8, 0) },
+      { type: 'Tree', pos: vec2(-4, -4) }, { type: 'Tree', pos: vec2(4, -4) },
+      { type: 'Treat', pos: vec2(0, -6) },
+      { type: 'Tree', pos: vec2(-2, -8) }
+    ]
+  },
+  {
+    name: 'The Tightest Funnel',
+    difficulty: 3,
+    objects: [
+      { type: 'Tree', pos: vec2(-8, 0) }, { type: 'Tree', pos: vec2(8, 0) },
+      // { type: 'Tree', pos: vec2(-4, -4) }, { type: 'Tree', pos: vec2(4, -4) },
+      { type: 'Treat', pos: vec2(0, -6) },
+      { type: 'Tree', pos: vec2(-2, -8) }, { type: 'Tree', pos: vec2(2, -8) }
+    ]
+  },
+  {
+    name: 'Forest Clearing',
+    difficulty: 1,
+    objects: [
+      { type: 'Treat', pos: vec2(-3, 0) }, { type: 'Treat', pos: vec2(0, -2) }, { type: 'Treat', pos: vec2(3, 0) }
+    ]
+  },
+  {
+    name: 'Expert Slalom',
+    difficulty: 2,
+    objects: [
+      { type: 'Tree', pos: vec2(-6, 0) },   // Left pivot
+      { type: 'Treat', pos: vec2(0, -2) },  // Guidance treat in center
+      { type: 'Tree', pos: vec2(6, -6) },    // Right pivot
+      { type: 'Treat', pos: vec2(0, -8) },  // Guidance treat in center
+      { type: 'Tree', pos: vec2(-6, -12) },  // Left pivot
+      { type: 'Treat', pos: vec2(0, -14) }, // Guidance treat in center
+      { type: 'Tree', pos: vec2(6, -18) }    // Right pivot
+    ]
+  },
+];
+// Let the js engine know this won't change
+Object.freeze(PATTERNS);
+
+let hiScore = 100;
+try {
+  hiScore = window.localStorage.getItem('hiScore') || hiScore;
+} catch (e) {}
+
+const G = {
+  width: 20, height: 30,
+  tileSize: 16,
+  tiles: ['public/ski_tiles.png?v=1.6'],
+  cols: {
+    white: new Color().setHex('#ffffff'),
+    red: new Color().setHex('#ff004d'),
+    pink: new Color().setHex('#ffc0cb'),
+    yellow: new Color().setHex('#ffff00'),
+    snow: new Color().setHex('#cfe7f7'),
+    lightBlue: new Color().setHex('#29adff'),
+    medBlue: new Color().setHex('#005784'),
+    slate: new Color().setHex('#343635'),
+    skyLight: new Color().setHex('#ffccaa'),
+    skyMed: new Color().setHex('#ff77a8'),
+    skyDark: new Color().setHex('#ff004d'),
+  },
+  sfx: {
+    play: function(name, pos = false) {
+      if (!G.settings.mute) {
+        G.sfx[name].play(pos);
+      }
+    },
+    ski: new Sound([.25,.5,40,.5,,.2,,11,,,,,,199]),
+    hit: new Sound([2.1,,156,.01,.01,.3,2,.6,,,,,,1.3,,.2,.14,.45,.01,,150]),
+    pickup: new Sound([1.4,,428,,.05,.08,1,1.9,,,442,.04,,,,,.03,.87,.03,,-1399]),
+  },
+  hiScore: parseInt(hiScore, 10),
+  plays: -1,
+  splash: true,
+  settings: {
+    fullscreen: false,
+    mute: false,
+  },
+  shake: {
+    time: 0,
+    strength: .4,
+  },
+}
+
+G.audioCache = new Map();
+G.mode = 'human';
+
+if (window.location.search.includes('yeti')) G.mode = 'yeti';
+if (window.location.search.includes('snowman')) G.mode = 'snowman';
+
+G.medals = [
+  new Medal(0, 'NEW HISCORE', 'Totally gnarly, dude!', '🥇')
+];
+
+if (window.location.hostname !== 'localhost') {
+  setShowSplashScreen(true);
+  setDebugWatermark(false);
+}
+  setDebugWatermark(false);
+
+G.tunes = new P8(Tunes.i, Tunes.m);
+setCanvasPixelated(true);
+setTileDefaultBleed(.5);
+
+function gameInit() {
+  const gameSize = vec2(G.width * G.tileSize, G.height * G.tileSize);
+  setCanvasFixedSize(gameSize);
+
+  // Set camera scale so the full design height fits the screen
+  cameraScale = G.tileSize; // pixels per world unit
+
+  // iOS Audio Unlock
+  if (G.tunes && G.tunes.ctx && G.tunes.ctx.state === 'suspended') {
+    G.tunes.ctx.resume();
+  }
+
+  preCacheMusic();
+
+  checkIOSInstall();
+  addSnow();
+
+  G.patternManager = new PatternManager(G);
+}
+
+function checkIOSInstall() {
+  const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) && !window.MSStream;
+  const isInstalled = window.navigator.standalone === true;
+
+  if (isIOS && !isInstalled) {
+    document.getElementById('ios-install-message').style.display = 'block';
+  }
+}
+
+
+function triggerCrashVibration() {
+  if ('vibrate' in navigator) {
+    // A heavy thud followed by a smaller shudder
+    navigator.vibrate([100, 50, 100]);
+  }
+};
+
+function addSnow(num = 60) {
+  let snowflakes = num;
+  while(snowflakes--) { new Snow(G); }
+}
+
+function removeSnow() {
+  for (const o of engineObjects) {
+    if (o.name === 'snow') o.destroy();
+  }
+}
+
+function resetGameObjects() {
+  engineObjects.forEach(obj => {
+    obj.destroy();
+  });
+}
+
+function preCacheMusic() {
+  console.log('Pre-rendering music tracks...');
+  // const tracksToCache = [14, 18, 24, 48, 36];
+  //
+  // for (let i = 0; i < tracksToCache.length; i++) {
+  //   const tuneId = tracksToCache[i];
+  //   // 1. Trigger the music generation
+  //   const musicInstance = G.tunes.music(tuneId);
+  //   // 2. Immediately stop it.
+  //   // This forces the library to parse the pattern and channel data
+  //   // into memory without actually making sound.
+  //   musicInstance.stop();
+  //
+  //   G.audioCache.set(tuneId, true);
+  //
+  //
+  // }
+[14, 18, 24, 48, 36].forEach(id => {
+    try {
+      const m = G.tunes.music(id);
+      m.stop();
+    } catch(e) { console.warn("Audio warm-up failed for track", id); }
+  });
+  console.log('Music metadata cached.');
+}
+
+
+function startGame() {
+  inputClear();
+  resetGameObjects();
+
+  G.speed = 0.1;
+  G.score = 0;
+  G.nextSpawn = 0;
+
+  G.plays += 1;
+  G.newHiscore = false;
+  G.patternManager.reset();
+
+  medalsInit('little-ski');
+  medalsForEach(medal=> medal.unlocked = false);
+
+  if (G.plays > 5 && !window.location.search.length) G.mode = ['yeti', 'snowman', 'human'].rnd();
+
+  // background
+  let halfH = G.height / 2;
+  let halfW = G.width / 2;
+  for (let y = -halfH; y <= halfH; y += 1) {
+    for (let x = -halfW; x <= halfW; x += 1) {
+      if (Math.random() > .95) {
+        new Bg(vec2(x, y), G);
+      }
+    }
+  }
+  if (!G.settings.mute) {
+    playTune(false, 10);
+  }
+  G.player = new Player(G);
+  G.splash = false;
+  G.newHiscore = false;
+
+  new Treat(G);
+  new Tree(G, vec2(0, -10));
+}
+
+function playTune(tune = false, delay = 0) {
+  if (G.settings.mute) { return; }
+
+  if (G.audio) {
+    try { G.audio.stop(); } catch(e) {}
+  }
+
+  const tuneId = tune || [14, 18, 24, 48].rnd();
+  try {
+    G.audio = G.tunes.music(tuneId);
+  } catch (e) {
+    console.log('Audio Error: ', e)
+  }
+}
+
+function splashUpdate() {
+  if (time > .5 && (mouseWasReleased(0) || keyWasReleased('Space'))) {
+    startGame();
+  }
+}
+
+function splashRender() {
+
+  // sky
+  drawRect(vec2(), vec2(G.width, G.height), G.cols.skyDark);
+  drawRect(vec2().add(vec2(0,-4)), vec2(G.width, G.height/1.75), G.cols.skyMed)
+  drawRect(vec2().add(vec2(0,-7)), vec2(G.width, G.height/4), G.cols.skyLight)
+
+  drawRect(vec2(0,4.2), vec2(G.width, .25), G.cols.skyDark);
+
+  drawRect(vec2(0,-3.6), vec2(G.width, .3), G.cols.skyMed);
+  drawRect(vec2(0,-4), vec2(G.width, .1), G.cols.skyMed);
+
+
+  // bg mtns
+  drawRect(vec2(-8, -10), vec2(6, 6), G.cols.slate, PI/4)
+  drawRect(vec2(8, -10), vec2(7), G.cols.slate, PI/4)
+
+  // main mtn
+  drawRect(vec2(0, -14), vec2(18, 18).add(vec2(.75)), G.cols.slate, PI/4)
+  drawRect(vec2(0, -14), vec2(18, 18), G.cols.lightBlue, PI/4)
+  // snow cap
+  drawRect(vec2(0, -4), vec2(4, 4), WHITE, PI/4)
+  drawRect(vec2(2.4, -5), vec2(2, 2), WHITE, PI/4)
+  drawRect(vec2(-2.4, -5), vec2(2, 2), WHITE, PI/4)
+  drawRect(vec2(3.2, -5.5), vec2(1.5), WHITE, PI/4)
+  drawRect(vec2(-3.2, -5.5), vec2(1.5), WHITE, PI/4)
+
+  renderHiScore();
+}
+
+function showPauseUI() {
+  inputClear();
+  setInputPreventDefault(false);
+  setPaused(true);
+  G.pauseUI.hidden = false;
+  if (!G.audio) return;
+  G.audio.playbackRate.value = 0;
+}
+
+function hidePauseUI() {
+  inputClear();
+  setInputPreventDefault(true);
+  G.pauseUI.hidden = true;
+  setPaused(false);
+  if (!G.audio || G.settings.mute) return;
+  G.audio.playbackRate.value = 1;
+}
+
+function toggleMute() {
+  G.settings.mute = !G.settings.mute;
+  G.muteCheckbox.checked = G.settings.mute;
+  if (!G.audio) return;
+  if (G.settings.mute) { G.audio.playbackRate.value = 0; return; }
+  if (!G.settings.mute && !G.player.crashed) {
+    playTune();
+    window.setTimeout(() => {
+      G.audio.playbackRate.value = getPaused() ? 0 : 1;
+    }, 100)
+  }
+}
+
+function gameUpdate() {
+
+  if (G.splash) { return splashUpdate(); }
+
+  G.score += G.speed / 10;
+
+  if (G.player && !G.player.crashed) {
+    G.speed += G.score / 100000;
+    G.speed = clamp(G.speed, 0.1, 0.3);
+  }
+
+  G.patternManager.update();
+
+  if (G.score > G.hiScore && !G.newHiscore) {
+    G.medals[0].unlock();
+    G.newHiscore = true;
+  }
+
+  if (G.score > G.hiScore && G.player.crashed) {
+    G.hiScore = Math.floor(G.score);
+    try {
+      window.localStorage.setItem('hiScore', G.hiScore)
+    } catch (e) {}
+  }
+
+  if (G.player.crashed
+    && time > G.player.crashed + 2
+    && (mouseWasPressed(0) || keyWasPressed('Space'))) {
+    startGame();
+  }
+
+  if (G.player && G.player.crashed
+    && time > G.player.crashed + 20) {
+    engineObjectsDestroy();
+    G.audio.stop();
+    G.splash = true;
+    addSnow();
+  }
+
+}
+
+function gameUpdatePost() {
+
+  if (keyWasReleased('KeyM')) {
+    toggleMute();
+  }
+
+  const mousePause = mouseWasPressed(0) && mousePos.y > 11;
+  if (keyWasReleased('KeyP') || keyWasReleased('KeyEsc') || mousePause) {
+    if (G.pauseUI.hidden) {
+      showPauseUI();
+    } else {
+      hidePauseUI();
+    }
+  }
+
+  let shakeOffset = vec2();
+
+  if (G.shake.time > 0) {
+    G.shake.time -= timeDelta;
+    shakeOffset = randVec2(G.shake.strength);
+    setCameraPos(vec2().add(shakeOffset));
+  } else if (G.shake.time < 0) {
+    setCameraPos(vec2());
+  }
+}
+
+function gameRender() {
+  if (G.splash) {
+    splashRender();
+    return;
+  }
+
+  drawRect(vec2(0), vec2(G.width, G.height), G.cols.snow);
+}
+
+function gameRenderPost() {
+  if (G.splash) {
+    if (G.mode === 'yeti') {
+      funkyText('YETI', vec2(2.7,10.7), 3, false, G);
+    } else if (G.mode === 'snowman') {
+      funkyText('SNOWMAN', vec2(2.7,10.7), 3, false, G);
+    } else {
+      funkyText('LITTLE', vec2(1,10.5), 3, false, G);
+    }
+    funkyText('SKI', vec2(2,7), 5, false, G);
+    funkyText('READY?', vec2(1, 0), 2, true, G, ['snow', 'lightBlue']);
+    let y = -11.5;
+    let x = (G.width / 2) - .5;
+    let size = .8;
+    let col = G.cols.medBlue;
+    drawText(`code: eoinmcg`, cameraPos.add(vec2(x, y)), size, col, 0, WHITE, 'right', 'monospace', 'bold');
+    drawText(`gfx: kenney.nl`, cameraPos.add(vec2(x, y-1)), size, col, 0, WHITE, 'right', 'monospace', 'bold');
+    drawText(`music: @gruber_music`, cameraPos.add(vec2(x, y-2)), size, col, 0, WHITE, 'right', 'monospace', 'bold');
+    drawText(`v.1.6`, cameraPos.add(vec2(-9.5, y-2)), size, new Color(1,1,1,0.5), 0, WHITE, 'left', 'monospace', 'bold');
+    return;
+  }
+
+  // pause
+  let pos = vec2((G.width / 2) - 1.5, (G.height / 2) - 1.5);
+  drawTile(pos, vec2(2), tile(88));
+
+  // left pad the score with 0s, so we have 0001 etc
+  let score = Math.floor(G.score).toString().padStart(4, '0')
+  // position the score at top center
+  let startPos = cameraPos.copy().add(vec2(-3,13))
+  score.split('').forEach((num, index) => {
+    num = parseInt(num, 10); // cast num as an int so we can add it to the frame
+    drawTile(
+      startPos.add(vec2(index * 1.75, 0)),
+      vec2(2.5), // digit size
+      tile(96 + num, G.tileSize), // 96 is the frame for 0
+      G.newHiscore ? YELLOW : WHITE,
+    );
+  });
+
+  const flash = Math.sin(time * 3);
+  if ((G.player && G.player.crashed)) {
+    funkyText('GAME OVER', vec2(0,-3), 2, true, G, ['red', 'yellow']);
+    if (G.newHiscore && flash > 0) {
+      drawText('NEW HISCORE!', vec2(0,-12), 1.5, YELLOW, .5, G.cols.medBlue, 'center', 'monospace', 'bold');
+    }
+    renderHiScore();
+  }
+  if (getPaused()) {
+    renderHiScore();
+  }
+}
+
+
+function renderHiScore() {
+  const font = engineImageFont;
+  drawText('HI: '+G.hiScore, vec2(0,-10), 1.5, WHITE, .5, G.cols.medBlue, 'center', 'monospace', 'bold');
+
+}
+
+class Player extends EngineObject {
+  constructor(game) {
+    let size = 1.7,
+        frame = Math.random() > .5 ? 70 : 82;
+
+    if (G.mode === 'yeti') frame = 78;
+    if (G.mode === 'snowman') frame = 76;
+
+    super(
+      vec2(0, 7),
+      vec2(size),
+      tile(frame, game.tileSize)
+    );
+
+    this.minX = (game.width-2) / -2;
+    this.maxX = (game.width-2) / 2;
+
+    // horizontal direction of player
+    this.dir = 0;
+
+    // an array of previous player position
+    this.trail = [];
+    this.trailCol = new Color(1, 1, 1, 0.25);
+
+    this.frame = frame;
+    this.setCollision(true, true, false, false);
+
+    this.game = game;
+    this.shadow = new Color(0,0,0,0.1);
+  }
+
+  update() {
+    super.update();
+    // some basic animation
+    this.currentFrame = (Math.sin(time * 7) > 0)
+      ? this.frame : this.frame + 1;
+
+    if (this.crashed) return;
+
+    const muteButton = mousePos.y > 27 && mousePos.x > 17;
+    if ((mouseWasPressed(0) || keyWasPressed('Space')) && !muteButton) {
+      particlesMove(this.pos, this.angle, this.game);
+      this.game.sfx.play('ski', this.pos);
+      this.dir = (this.dir === 0)
+        ? -1 : this.dir *= -1;
+    }
+
+    // gradually increase x speed
+    this.velocity.x += (this.dir * .015);
+
+    // clamp x speed
+    this.velocity.x = clamp(this.velocity.x, -.3, .3);
+
+    // update angle based on exaggerated velocity
+    this.angle = -this.velocity.x * 2.5;
+
+    // check for out of bounds
+    if (this.pos.x <= this.minX
+      || this.pos.x >= this.maxX) {
+      // slightly bump player away from screen edge
+      this.pos.x -= this.velocity.x * 1;
+      // reduce x speed
+      this.velocity.x *= -.1;
+      // change direction
+      this.dir *= -1;
+    }
+
+    this.trail.push({pos: this.pos.copy(), angle: this.angle});
+
+    for (let i = 0; i < this.trail.length; i++) {
+        let t = this.trail[i];
+        t.pos.y += this.game.speed;
+
+        if (t.pos.y > this.game.height || this.trail.length > 60) {
+            this.trail.splice(i, 1);
+            i--; // Decrement index to account for the shift
+        }
+    }
+  }
+
+  render() {
+    this.trail.forEach((t) => {
+      drawTile(t.pos, vec2(2),
+        tile(58, this.game.tileSize),
+        this.trailCol, t.angle);
+    });
+
+    if (!this.crashed) {
+      // shadow
+      drawCircle(this.pos.add(vec2(0,-1)), 2, this.shadow);
+      // left ski
+      drawRect(this.pos.add(vec2(-.4, -.5)), vec2(.4, 2.4), BLACK, this.angle);
+      drawRect(this.pos.add(vec2(-.4, -.5)), vec2(.2, 2), ORANGE, this.angle);
+      // right ski
+      drawRect(this.pos.add(vec2(.4, -.5)), vec2(.4, 2.4), BLACK, this.angle);
+      drawRect(this.pos.add(vec2(.4, -.5)), vec2(.2, 2), ORANGE, this.angle);
+    }
+
+    drawTile(this.pos, this.size,
+      tile(this.currentFrame, G.tileSize),
+      undefined, this.angle);
+  }
+
+  collideWithObject(o) {
+    if (this.crashed) return;
+
+    if (o.constructor.name === 'Treat') {
+      this.game.sfx.play('pickup', this.pos);
+      o.destroy();
+      particlesCollect(this.pos, this.game);
+      this.game.score += 10;
+      return;
+    }
+
+    particlesCrash(this.pos, this.game);
+    this.game.shake.time = .3;
+    triggerCrashVibration();
+    this.game.sfx.play('hit', this.pos);
+    this.game.speed = 0;
+    this.velocity.x = 0;
+    this.angle = 0;
+    this.frame = 94;
+    this.crashed = time;
+    o.destroy();
+    playTune(36, 1000);
+    addSnow();
+  }
+}
+
+class Tree extends EngineObject {
+  constructor(game, pos = null) {
+    let x = game.width / 2;
+    let startPos = pos || vec2(rand(-x, x), -game.height / 2 - 2);
+    let frame = 30;
+    super(startPos, vec2(.5), tile(frame, game.tileSize));
+
+    this.game = game;
+    this.setCollision(true, false, false, false);
+    this.shadow = new Color(0,0,0,0.1);
+
+    this.drawSize = vec2(2);
+    this.renderOrder = 1;
+  }
+
+  update() {
+    if (this.dead) return;
+    super.update();
+    this.pos.y += this.game.speed;
+
+    // remove object when past top of screen
+    if (this.pos.y > this.game.height / 2) {
+      super.destroy();
+    }
+  }
+
+  render() {
+    if (this.dead) return;
+    drawCircle(this.pos.add(vec2(0,-.5)), 2, this.shadow);
+    super.render();
+  }
+}
+
+class Treat extends EngineObject {
+  constructor(game, pos = null) {
+    let frame = 92; // 90: beer, 91: pizza, 92: donut, 93: ice-cream
+    if (G.mode === 'yeti') frame = 90;
+    if (G.mode === 'snowman') frame = 93;
+    let x = game.width / 2;
+    let y = game.height / 2;
+
+    let startPos = pos || vec2(rand(-x, x), -y-2);
+    super(startPos, vec2(2), tile(frame, 16));
+    this.game = game;
+    this.frame = frame;
+
+    this.off = vec2();
+    this.glimmerSpeed = 5; // (higher = faster)
+    this.renderOrder = 1;
+
+    this.setCollision(true, false, false, false);
+  }
+
+  update() {
+    if (this.dead) return;
+    this.wave = Math.abs(Math.sin(time * 2));
+    this.updateGlimmer();
+    super.update();
+    this.pos.y += this.game.speed;
+    if (this.pos.y > this.game.height / 2) {
+      this.destroy();
+    }
+  }
+
+  updateGlimmer() {
+    // Calculate position of glimmer with faster movement
+    let sineValue = Math.sin(time * this.glimmerSpeed);
+
+    // Check if sine wave is moving in positive direction (derivative > 0)
+    // cos(x) gives us the derivative of sin(x)
+    let cosValue = Math.cos(time * this.glimmerSpeed);
+
+    this.off = clamp(sineValue * .5, -.2, .2);
+    this.shadow = new Color(0,0,0,0.1);
+  }
+
+  render() {
+    if (this.dead) return;
+    // shadow
+    drawCircle(this.pos.add(vec2(0,-.5)), 1.5-(this.wave/2), this.shadow);
+    // image
+    drawTile(this.pos.add(vec2(0, this.wave)), vec2(1.5), tile(this.frame, 16));
+    this.renderGlimmer();
+  }
+
+  renderGlimmer() {
+    let col = WHITE;
+      let p = this.pos.add(vec2(this.off)).add(vec2(-1, 1));
+      if (this.off >= .2) {
+        drawLine(p.add(vec2(-.6,0)), p.add(vec2(.6,0)), .2, col, undefined, time, true);
+        drawLine(p.add(vec2(0,-.6)), p.add(vec2(0,.6)), .2, col, undefined, time, true);
+        // drawTile( p, vec2(1), tile(89), WHITE, time * 3);
+      }
+  }
+}
+
+class Bg extends EngineObject {
+  constructor(pos, game) {
+    super(pos, vec2(rand(1,3)), tile(3, game.tileSize))
+    this.renderOrder = 0;
+    this.game = game;
+  }
+
+  update() {
+    super.update();
+    this.pos = this.pos.add(vec2(0, this.game.speed));
+
+    if (this.pos.y > (this.game.height+4) / 2) {
+      this.pos.y = (this.game.height+4) / -2;
+      this.mirror = !this.mirror;
+    }
+  }
+}
+
+class Snow extends EngineObject {
+  constructor(game) {
+    let x = game.width / 2;
+    let y = game.height / 2;
+    super(vec2(rand(-x, x), rand(-y, y)),
+      vec2(rand(.25,1.5)), tile(84, game.tileSize))
+    this.renderOrder = 10;
+    this.game = game;
+    this.speed = this.size.x / 20;
+    this.startX = this.pos.x
+    this.name = 'snow';
+  }
+
+  update() {
+    super.update();
+    let x = this.startX + (Math.sin(time * .005))
+    this.pos = this.pos.add(vec2(0, -this.speed));
+    this.pos.x = this.startX + (Math.sin(time * this.speed * 15));
+
+    if (this.pos.y < (this.game.height / -1.8)) {
+      this.pos.y = this.game.height / 2;
+      this.mirror = !this.mirror;
+    }
+  }
+}
+
+const particlesCrash = (pos, game) => {
+  let col = new Color();
+  new ParticleEmitter(
+    pos, 0,            // pos, angle
+    0, .2, 15, 1, // emitSize, emitTime, emitRate, emiteCone
+    tile(86,16),                      // tileInfo
+    game.cols.white, game.cols.snow,           // colorStartA, colorStartB
+    game.cols.white.scale(0,0), game.cols.snow.scale(0,0), // colorEndA, colorEndB
+    1, 5, 8, 0, 0.01,  // time, sizeStart, sizeEnd, speed, angleSpeed
+    1, 1, 0, 1,   // damping, angleDamping, gravityScale, cone
+    .1, 0.1, 0, 1        // fadeRate, randomness, collide, additive
+  );
+}
+
+const particlesMove = (pos, angle, game, num = 30) => {
+  new ParticleEmitter(
+    vec2(pos.x, pos.y + 1), -angle,            // pos, angle
+    0, .2, num, 1, // emitSize, emitTime, emitRate, emiteCone
+    tile(107,16),                      // tileInfo
+    game.cols.white, game.cols.snow,           // colorStartA, colorStartB
+    game.cols.white.scale(1,0), game.cols.snow.scale(1,0), // colorEndA, colorEndB
+    1, 1, .5, .1, 0,  // time, sizeStart, sizeEnd, speed, angleSpeed
+    1, 1, 0, 1,   // damping, angleDamping, gravityScale, cone
+    .1, 0, 0, 1        // fadeRate, randomness, collide, additive
+  );
+}
+
+const particlesCollect = (pos, game) => {
+  new ParticleEmitter(
+    pos, 0,            // pos, angle
+    0, .2, 15, 0.2, // emitSize, emitTime, emitRate, emiteCone
+    tile(85,16),                      // tileInfo
+    game.cols.red, game.cols.yellow, // colorStartA, colorStartB
+    game.cols.red, game.cols.yellow, // colorEndA, colorEndB
+    1, 2, .5, game.speed * 1.5, .02,  // time, sizeStart, sizeEnd, speed, angleSpeed
+    1, 1, 0, 0,   // damping, angleDamping, gravityScale, cone
+    .1, .1, 0, 0        // fadeRate, randomness, collide, additive
+  );
+}
+
+class PatternManager {
+constructor(game) {
+    this.game = game;
+    this.distanceToNext = 0;
+    this.spawnQueue = [];
+    this.burstTimer = 0;
+  }
+
+  update() {
+    this.distanceToNext -= this.game.speed;
+    if (this.distanceToNext <= 0) {
+      this.enqueuePattern();
+      // Increase the distance between pattern starts to ensure the queue can clear
+      this.distanceToNext = Math.max(15, 30 - (this.game.score / 40));
+    }
+
+    // Spaced Burst Logic
+    if (this.spawnQueue.length > 0) {
+      if (this.burstTimer <= 0) {
+        // Process a small cluster (e.g., 3 objects) then wait
+        let burstSize = 3; 
+        while (burstSize-- > 0 && this.spawnQueue.length > 0) {
+          this.spawnQueue.shift()();
+        }
+        // Wait 30 frames before the next burst
+        this.burstTimer = 30;
+      } else {
+        this.burstTimer--;
+      }
+    }
+  }
+
+  enqueuePattern() {
+    const available = PATTERNS.filter(p => p.difficulty <= 1 + (this.game.score / 100));
+    const pattern = available.rnd();
+
+    pattern.objects.forEach(obj => {
+      const spawnPos = vec2(obj.pos.x, -this.game.height / 2 + obj.pos.y - 5);
+      this.spawnQueue.push(() => {
+        if (obj.type === 'Tree') new Tree(this.game, spawnPos);
+        else if (obj.type === 'Treat') new Treat(this.game, spawnPos);
+      });
+    });
+  }
+
+  reset() {
+    this.spawnQueue = [];
+    this.distanceToNext = 0;
+  }
+}
+
+/**
+ *  Draws some funky text
+ *  go crazy (if you want)
+ *  @param {String}  text
+ *  @param {Vector2} [pos=camerPos]
+ *  @param {Number}  [scale=2]
+ *  @param {Object}   [game]
+ *  @param {Boolean}   [crazy=false]
+ *  @param {Object}   [game]
+ *  @param {Array}   [cols]
+ *  */
+function funkyText(str, pos = cameraPos, scale = 2, crazy = false, game, cols = ['red', 'yellow']) {
+  const letters = str.toUpperCase().split('');
+  const charWidth = scale * 0.7;
+  const totalWidth = letters.length * charWidth;
+  const offset = 108 - 65; 
+
+  letters.forEach((letter, i) => {
+    if (letter === ' ') return;
+
+    // Individual Letter Wave
+    // Using (time * speed + i * phase) makes letters follow each other in a snake motion
+    const speed = 5;
+    const phaseShift = i * 0.5;
+    const individualWave = crazy ? Math.sin(time * speed + phaseShift) : 0;
+    
+    // Calculate Position
+    const x = (i * charWidth) - (totalWidth / 2);
+    const y = individualWave * 0.5; // Up and down bounce
+    const angle = crazy ? individualWave * 0.1 : 0; // Slight tilt
+    const charPos = pos.add(vec2(x, y));
+
+    let col = game.cols.white;
+    if (crazy) {
+        // Cycle colors based on time + index
+        const colorIndex = Math.floor(time * 10 + i) % 2;
+        col = colorIndex === 0 ? game.cols[cols[0]] : game.cols[cols[1]];
+    }
+
+    // Draw the same letter slightly offset in a dark color first
+    const shadowOffset = vec2(0.1, -0.1);
+    drawTile(charPos.add(shadowOffset), vec2(scale), tile(letter.charCodeAt(0) + offset, 16), new Color(0,0,0,0.5), angle);
+
+    // 5. DRAW MAIN CHARACTER
+    drawTile(charPos, vec2(scale), tile(letter.charCodeAt(0) + offset, 16), col, angle);
+  });
+}
+addEventListener("DOMContentLoaded", async() => {
+
+  G.modalBackdrop = document.querySelector('#pause-backdrop');
+  G.modalDialog = document.querySelector('#pause-panel');
+  G.pauseUI = document.getElementById('pause-ui');
+  G.modalDialogClose = G.pauseUI.querySelector('button');
+
+  G.modalDialogClose.addEventListener('click', (e) => {
+    hidePauseUI();
+  });
+
+  G.muteCheckbox = G.modalDialog.querySelector('input[name="mute"]');
+  G.muteCheckbox.addEventListener('change', e => {
+    toggleMute();
+  });
+
+  const fullscreenCheckbox = G.modalDialog.querySelector('input[name="fullscreen"]');
+  fullscreenCheckbox.addEventListener('change', e => {
+    G.settings.fullscreen = e.target.checked;
+    const root = document.querySelector('#game-root');
+
+    if (G.settings.fullscreen)
+      root.requestFullscreen();
+    else
+      document.exitFullscreen();
+  });
+
+  const clearScores = G.modalDialog.querySelector('label.clear-scores');
+  clearScores.addEventListener('click', e => {
+    G.sfx.play('hit');
+    try {
+      window.localStorage.clear();
+      G.hiScore = 100;
+      G.newHiscore = false;
+    } catch(e) { }
+  });
+
+  document.addEventListener('fullscreenchange', () => {
+    window.setTimeout(() => {
+      // sync checkbox
+      fullscreenCheckbox.checked = (document.fullscreenElement !== null)
+    }, 500)
+  });
+
+  let deferredPrompt;
+  const installLabel = document.getElementById('install-label');
+  const installBtn = document.getElementById('install-button');
+
+  window.addEventListener('beforeinstallprompt', (e) => {
+    // Prevent the mini-infobar from appearing on mobile
+    e.preventDefault();
+    // Stash the event so it can be triggered later
+    deferredPrompt = e;
+    // Update UI to show the install button because we know it's NOT installed
+    installLabel.style.display = 'block';
+  });
+
+  installBtn.addEventListener('click', async () => {
+    if (!deferredPrompt) return;
+    
+    // Show the install prompt
+    deferredPrompt.prompt();
+    
+    // Wait for the user to respond to the prompt
+    const { outcome } = await deferredPrompt.userChoice;
+    console.log(`User response to install: ${outcome}`);
+    
+    // We've used the prompt, and can't use it again
+    deferredPrompt = null;
+    // Hide the button
+    installLabel.style.display = 'none';
+  });
+
+  // Hide the button if the app is successfully installed
+  window.addEventListener('appinstalled', () => {
+    installLabel.style.display = 'none';
+    deferredPrompt = null;
+    console.log('PWA installed');
+  });
+
+
+  const loader = document.getElementById('loading-overlay');
+  const title = document.getElementById('loading-title');
+  const spinner = loader.querySelector('.spinner');
+
+  preCacheMusic();
+
+  title.classList.add('blink')
+  title.innerText = ('ontouchstart' in window)
+    ? 'TAP ME' : 'CLICK ME';
+  spinner.style.display = 'none';
+
+  const handleClick = () => {
+    // Trigger the first frame of the game
+    loader.style.display = 'none';
+    engineInit(
+      gameInit,
+      gameUpdate, gameUpdatePost,
+      gameRender, gameRenderPost,
+      G.tiles,
+      document.querySelector('#game-root'),
+    );
+    console.log('🏔🏔🏔🏔🏔🏔🏔🏔🏔🏔🏔🏔🏔🏔🏔🏔🏔🏔🏔')
+    console.log('🏂 Wanna see how this game was made? Check out the tutorial:')
+    console.log('https://eoinmcgrath.com/little-ski/tutorial.html')
+    window.removeEventListener('click', handleClick); 
+    window.removeEventListener('keypress', handleClick);
+  }
+
+  window.addEventListener('click', handleClick);
+  window.addEventListener('keypress', handleClick);
+
+});
+
+
+</script>
+
+<div id="game-root">
+<div id="loading-overlay" style="">
+    <div id="loading-title" style="font-size: 24px; margin-bottom: 10px;">Loading</div>
+    <div class="spinner"></div>
+
+</div>
+  <div id="pause-ui" hidden>
+    <div id="pause-backdrop"></div>
+    <div id="pause-panel">
+      <button>Close</button>
+      <h1>Paused</h1>
+      <label>
+        <input type="checkbox" name="fullscreen" id="fullscreenToggle">
+        Fullscreen
+      </label>
+      <label>
+        <input type="checkbox" name="mute" id="muteToggle">
+        Mute
+      </label>
+      <label class="clear-scores">
+            Clear scores
+      </label>
+      <div id="install-label" style="display: none;">
+          <button id="install-button">
+              Install App
+          </button>
+      </div>
+    <div id="ios-install-message" style="display: none; background: #036; border: 1px solid #444; padding: 10px; margin-top: 10px; text-shadow: none; font-size: 14px; text-align: left;">
+        <p style="margin: 0 0 8px 0; color: #fff;"><b>Play Offline on iPhone:</b></p>
+        <ol style="margin: 0; padding-left: 20px; color: #ccc;">
+            <li>Tap the <b>Share</b> button </li>
+            <li>Scroll down and tap <b>Add to Home Screen</b></li>
+        </ol>
+    </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
